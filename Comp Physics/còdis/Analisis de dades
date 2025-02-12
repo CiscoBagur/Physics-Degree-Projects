@@ -1,0 +1,123 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy as sy
+
+filepath1 = r"C:\Users\cisco\Desktop\FIS_IV\Segon Semestre\Física experimental II\Examen\datos_estudiante_02\datos_exp_masa_num_1.txt"
+filepath2 = r"C:\Users\cisco\Desktop\FIS_IV\Segon Semestre\Física experimental II\Examen\datos_estudiante_02\datos_exp_masa_num_2.txt"
+filepath3 =r"C:\Users\cisco\Desktop\FIS_IV\Segon Semestre\Física experimental II\Examen\datos_estudiante_02\datos_exp_masa_num_3.txt"
+filepath4 =r"C:\Users\cisco\Desktop\FIS_IV\Segon Semestre\Física experimental II\Examen\datos_estudiante_02\datos_exp_masa_num_4.txt"
+filepath5 =r"C:\Users\cisco\Desktop\FIS_IV\Segon Semestre\Física experimental II\Examen\datos_estudiante_02\datos_exp_masa_num_5.txt"
+
+
+df1 = pd.read_table(filepath1, names=['temps', 'amplitud'])
+df2 = pd.read_table(filepath2, skiprows=7,names=['temps', 'amplitud'])
+df3 = pd.read_table(filepath3, skiprows=7,names=['temps', 'amplitud'])
+df4 = pd.read_table(filepath4, skiprows=7,names=['temps', 'amplitud'])
+df5 = pd.read_table(filepath5, skiprows=7,names=['temps', 'amplitud'])
+
+
+df1=df1.replace(to_replace=-999, value=np.nan)
+df2=df2.replace(to_replace=-999, value=np.nan)
+df3=df3.replace(to_replace=-999, value=np.nan)
+df4=df4.replace(to_replace=-999, value=np.nan)
+df5=df5.replace(to_replace=-999, value=np.nan)
+
+df1.amplitud= df1.amplitud-df1.amplitud.iat[-1]
+df2.amplitud= df2.amplitud-df2.amplitud.iat[-1]
+df3.amplitud= df3.amplitud-df3.amplitud.iat[-1]
+df4.amplitud= df4.amplitud-df4.amplitud.iat[-1]
+df5.amplitud= df5.amplitud-df5.amplitud.iat[-1]
+
+#interpolar
+
+
+df1 =df1.where(np.abs(df1['amplitud']) <0.2,np.nan)
+df2 =df2.where(np.abs(df2['amplitud']) <0.35,np.nan)
+df3 =df3.where(np.abs(df3['amplitud']) <0.5,np.nan)
+df4 =df4.where(np.abs(df4['amplitud']) <0.62,np.nan)
+df5 =df5.where(np.abs(df5['amplitud']) <0.8,np.nan)
+
+df1 = df1.interpolate()
+df2 = df2.interpolate()
+df3 = df3.interpolate()
+df4 = df4.interpolate()
+df5 = df5.interpolate()
+
+peaks1 = list(sy.signal.find_peaks(df1.amplitud, height=0.001, prominence=0.005))[0]
+peaks2 = list(sy.signal.find_peaks(df2.amplitud, height=0.001, prominence=0.005))[0]
+peaks3 = list(sy.signal.find_peaks(df3.amplitud, height=0.001, prominence=0.005))[0]
+peaks4 = list(sy.signal.find_peaks(df4.amplitud, height=0.001, prominence=0.005))[0]
+peaks5 = list(sy.signal.find_peaks(df5.amplitud, height=0.001, prominence=0.005))[0]
+
+df1_p =df1.loc[peaks1,:]
+df2_p =df2.loc[peaks2,:]
+df3_p =df3.loc[peaks3,:]
+df4_p =df4.loc[peaks4,:]
+df5_p =df5.loc[peaks5,:]
+
+
+
+
+# Càlcul de b
+df5_p.amplitud = np.log(df5_p.amplitud)
+
+x = df5_p.temps.to_list()
+y= df5_p.amplitud.to_list()
+
+yerror = 0.0
+xerror= 0.0
+#Sumatori de x_i:
+sumax=0
+
+for i in range(len(x)):
+    sumax=sumax+x[i]
+
+
+#Sumatori de x_i * y_i:
+sumaxy=0
+for i in range(len(x)):
+    sumaxy=sumaxy+(x[i]*y[i])
+
+#Sumatori de y_i
+sumay=0
+for i in range(len(x)):
+    sumay=sumay+y[i]
+
+
+#Sumatori de x_i^2
+sumax2=0
+for i in range(len(x)):
+    sumax2=sumax2+(x[i])**2
+
+def ajustsensepesos():
+    triangle= len(y)*sumax2-(sumax)**2
+    A=(sumax2*sumay-sumax*sumaxy)/triangle
+    B=(len(y)*sumaxy-sumax*sumay)/triangle
+    erroreq=np.sqrt(yerror**2+(B*xerror)**2)
+    sigma_A=erroreq*np.sqrt(sumax2/triangle)
+    sigma_B=erroreq*np.sqrt(len(y)/triangle)
+   
+    #plt.savefig("grafic.png",dpi=2000)
+    print("'''''''AJUST AMB INCERTESES CONSTANTS'''''''")
+    print('A=',A)
+    print('B=', B)
+    print('sigma_A=', sigma_A)
+    print('sigma_B=', sigma_B)
+    print("El coeficient de correlació lineal és:", (np.corrcoef(x,y)[0][1])**2)
+    return A, B
+
+a, b = ajustsensepesos()
+
+x_ajust=np.linspace(0,max(x)+1)
+y_ajust=np.exp(b*x_ajust+a)
+df5_p =df5.loc[peaks5,:]
+
+ax = df5.plot(x='temps', y='amplitud')
+plt.plot(x_ajust,y_ajust,"r",linestyle='dashed', linewidth=3)
+df5_p.plot(ax=ax,x='temps', y='amplitud',marker='.',color='g')
+plt.title("amplitud vs t")
+plt.xlabel('temps [s]')
+plt.ylabel('amplitud [m]')
+plt.legend(('Dades', 'Ajust', 'Màxims'), loc='upper right')
+plt.show()
