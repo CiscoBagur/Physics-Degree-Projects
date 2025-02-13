@@ -11,6 +11,7 @@ xerror= 0.02
 sumax=0
 for i in range(len(x)):
     sumax=sumax+x[i]
+    
 
 
 #Sumatori de x_i * y_i:
