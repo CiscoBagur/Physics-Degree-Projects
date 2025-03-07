@@ -1,7 +1,5 @@
-# Import the necessary lybraries
 import numpy as np
 import matplotlib.pyplot as plt
-import networkx as nx
 import time
 
 
@@ -13,32 +11,39 @@ class TwoStateGraph:
         Args:
         - num_nodes (int): Total number of nodes in the graph
         - initial_state_frac (float): Fraction of initial state being 1
+        - prestige (float): Prestige parameter for the AS model
+        - volatility (float): Volatility parameter for the AS model
         """
-        # Create a random graph with some values for prestige and volatility
-        graph = nx.complete_graph(num_nodes)
-        self.G = nx.to_numpy_array(graph)
+        # Create a complete graph as a NumPy adjacency matrix directly
+        self.num_nodes = num_nodes
+        self.G = np.ones((num_nodes, num_nodes)) - np.eye(num_nodes)
         self.s = prestige
         self.a = volatility
         
-        # Initialize node states to the initial fraction(0 or 1)
-        self.states = []
-        for node in range(num_nodes):
-            self.states.append(1 if node/num_nodes < initial_state_frac else 0)
+        # Initialize node states more efficiently using NumPy
+        self.states = np.zeros(num_nodes)
+        initial_ones = int(num_nodes * initial_state_frac)
+        self.states[:initial_ones] = 1
         
         # Store history of state counts
         self.state_history = []
+        
+        # Pre-compute neighbor indices for each node
+        self.neighbor_indices = [np.where(self.G[node] == 1)[0] for node in range(num_nodes)]
+        
+        # Record initial state
+        self.state_history.append(self._count_states())
     
-    def _count_states(self, num_nodes):
+    def _count_states(self):
         """
-        Count the number of nodes in each state.
+        Count the fraction of nodes in state 1.
         
         Returns:
-        - dict: Number of nodes in state 0 and state 1
+        - float: Fraction of nodes in state 1
         """
-        total = sum(self.states)
-        return total/num_nodes
+        return np.mean(self.states)
     
-    def update_states(self, update_rule, num_nodes):
+    def update_states(self, update_rule):
         """
         Update node states based on a given update rule.
         
@@ -47,86 +52,109 @@ class TwoStateGraph:
           based on its current state and its neighbors' states
         """
         # Create a copy of current states to avoid sequential update bias
-        current_states = np.array(self.states.copy())
+        current_states = self.states.copy()
+        
+        # Vectorized random values (generate all at once)
+        random_values = np.random.random(self.num_nodes)
+        
         # Update each node's state
-        for node in range(num_nodes):
-            neighbors_index = np.where(self.G[node]==1)[0]
-            neighbors = current_states[neighbors_index]
+        for node in range(self.num_nodes):
+            neighbors = current_states[self.neighbor_indices[node]]
             self.states[node] = update_rule(current_states[node], 
-                                            neighbors, prestige=self.s, volatility=self.a)
+                                          neighbors, 
+                                          self.s, 
+                                          self.a, 
+                                          random_values[node])
         
         # Record state counts
-        state_counts = self._count_states(num_nodes)
-        self.state_history.append(state_counts)
+        state_count = self._count_states()
+        self.state_history.append(state_count)
         
-        return state_counts
-    
+        return state_count
     
     def visualize_state_evolution(self):
         """
         Visualize the evolution of node states over time.
         """
-        # state_0_history = [counts[0] for counts in self.state_history]
-        state_1_history = [counts for counts in self.state_history]
-        
         plt.figure(figsize=(10, 6))
-        # plt.plot(state_0_history, label='State 0')
-        plt.plot(state_1_history, label='Speakers of X')
+        plt.plot(self.state_history, label='Speakers of X')
         plt.title('Node State Evolution')
         plt.xlabel('Timestep')
-        plt.ylabel('Number of Nodes')
-        plt.ylim(0,1)
+        plt.ylabel('Fraction of Nodes')
+        plt.ylim(0, 1)
         plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
         plt.show()
         
-        
-# Rule update
-def AS_rule_update(current_state, neighbor_states, prestige, volatility):
+# Optimized rule update
+def AS_rule_update(current_state, neighbor_states, prestige, volatility, random_value):
     """
-    Update rule: node changes language according to the proabilities predicted by the AS model.
+    Update rule: node changes language according to the probabilities predicted by the AS model.
+    
+    Args:
+    - current_state: Current state of the node (0 or 1)
+    - neighbor_states: States of neighboring nodes
+    - prestige: Prestige parameter
+    - volatility: Volatility parameter
+    - random_value: Pre-generated random value
     """
-    if  sum(neighbor_states)==0:
+    if len(neighbor_states) == 0:
         return current_state
     
-    neighbors_sum = sum(neighbor_states)/len(neighbor_states) # Fraction of neighbours that speak X
-    w = np.random.random()
-    # print(current_state,neighbor_states,neighbors_sum)
-    if current_state==0:
-        if w < prestige*neighbors_sum**volatility:
-            # print('guanya  x')
+    neighbors_sum = np.mean(neighbor_states)  # Fraction of neighbours that speak X
+    
+    if current_state == 0:
+        if random_value < prestige * neighbors_sum**volatility:
             return 1
         else:
             return 0
-    if current_state==1:
-        if w < (1-prestige)*(1-neighbors_sum)**volatility:
-            # print('guanya  y')
+    else:  # current_state == 1
+        if random_value < (1-prestige) * (1-neighbors_sum)**volatility:
             return 0
         else:
-            # print('no guanya cap')
             return 1
         
-def run_simulation(num_nodes, timesteps, initial_state_frac, prestige, volatility):
-
+def run_simulation(num_nodes=1000, timesteps=100, initial_state_frac=0.5, prestige=0.55, volatility=0.6, verbose=True):
+    """
+    Run the AS model simulation.
+    
+    Args:
+    - num_nodes: Number of nodes in the graph
+    - timesteps: Number of simulation steps
+    - initial_state_frac: Initial fraction of nodes in state 1
+    - prestige: Prestige parameter for the AS model
+    - volatility: Volatility parameter for the AS model
+    - verbose: Whether to print progress information
+    """
     # Calculate the start time
     start = time.time()
 
     # Create graph
-    graph = TwoStateGraph(num_nodes,initial_state_frac, prestige, volatility)
+    graph = TwoStateGraph(num_nodes, initial_state_frac, prestige, volatility)
     
     # Initial state counts
-    print("Initial state counts:", graph._count_states(num_nodes))
+    if verbose:
+        print(f"Initial state counts: {graph.state_history[0]:.3f}")
+    
+    # Progress tracking
+    update_interval = max(1, timesteps // 10)
     
     # Loop
     for t in range(timesteps):
-        graph.update_states(AS_rule_update,num_nodes)
+        current_count = graph.update_states(AS_rule_update)
+        if verbose and (t+1) % update_interval == 0:
+            print(f"Timestep {t+1}/{timesteps}, State 1 fraction: {current_count:.3f}")
     
     # Calculate the end time and print it
     end = time.time()
-    length = end - start
-    print("It took", length, "seconds!")
+    runtime = end - start
+    if verbose:
+        print(f"Simulation completed in {runtime:.2f} seconds!")
     
     # Visualize results
     graph.visualize_state_evolution()
     
+    return graph
 
-run_simulation(num_nodes=1000, timesteps=100, initial_state_frac=0.5, prestige=0.55, volatility=0.6)
+run_simulation(num_nodes=1000, timesteps=100, initial_state_frac=0.6, prestige=0.55, volatility=0.6)
